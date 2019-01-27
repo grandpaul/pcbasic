@@ -21,7 +21,7 @@ from . import values
 class BasicEvents(object):
     """Manage BASIC events."""
 
-    def __init__(self, values, sound, clock, files, screen, program, num_fn_keys):
+    def __init__(self, values, sound, clock, files, program, num_fn_keys):
         """Initialise event triggers."""
         self._values = values
         self._sound = sound
@@ -331,6 +331,9 @@ class KeyHandler(EventHandler):
 
     def set_trigger(self, keystr):
         """Set KEY trigger to chr(modcode)+chr(scancode)."""
+        # only length-2 expressions can be assigned as scancode triggers
+        if len(keystr) != 2:
+            raise error.BASICError(error.IFC)
         # can't redefine scancodes for predefined keys 1-14 (pc) 1-16 (tandy)
         if not self._predefined:
             # from modifiers, exclude scroll lock at 0x10 and insert 0x80.

@@ -16,37 +16,6 @@ from .. import values
 
 
 ###############################################################################
-# clipboard copy & print screen handler
-
-# clipboard copy & print screen are special cases:
-# they to handle an input signal, read the screen
-# and write the text to an output queue or file
-# independently of what BASIC is doing
-
-class ScreenCopyHandler(object):
-    """Event handler for clipboard copy and print screen."""
-
-    def __init__(self, screen, lpt1_file):
-        """Initialise copy handler."""
-        self._screen = screen
-        self._lpt1_file = lpt1_file
-
-    def check_input(self, signal):
-        """Handle input signals."""
-        if signal.event_type == signals.CLIP_COPY:
-            self._screen.copy_clipboard(*signal.params)
-            return True
-        elif signal.event_type == signals.KEYB_DOWN:
-            c, scan, mod = signal.params
-            if scan == scancode.PRINT and (
-                    scancode.LSHIFT in mod or scancode.RSHIFT in mod):
-                # shift+printscreen triggers a print screen
-                self._screen.print_screen(self._lpt1_file)
-                return True
-        return False
-
-
-###############################################################################
 # light pen
 
 class Pen(object):
@@ -88,36 +57,38 @@ class Pen(object):
         """Report a pen-move event at graphical x,y """
         self._pos = x, y
 
-    def poll(self, fn, enabled, screen):
+    def poll(self, fn, enabled, mode):
         """PEN: poll the light pen."""
         fn = values.to_int(fn)
         error.range_check(0, 9, fn)
-        posx, posy = self._pos
-        if fn == 0:
-            pen_down_old, self._was_down = self._was_down, False
-            pen = -1 if pen_down_old else 0
-        elif fn == 1:
-            pen = self._down_pos[0]
-        elif fn == 2:
-            pen = self._down_pos[1]
-        elif fn == 3:
-            pen = -1 if self._is_down else 0
-        elif fn == 4:
-            pen = posx
-        elif fn == 5:
-            pen = posy
-        elif fn == 6:
-            pen = 1 + self._down_pos[1] // screen.mode.font_height
-        elif fn == 7:
-            pen = 1 + self._down_pos[0] // screen.mode.font_width
-        elif fn == 8:
-            pen = 1 + posy // screen.mode.font_height
-        elif fn == 9:
-            pen = 1 + posx // screen.mode.font_width
         if not enabled:
             # should return 0 or char pos 1 if PEN not ON
-            pen = 1 if fn >= 6 else 0
-        return pen
+            return 1 if fn >= 6 else 0
+        if fn == 0:
+            pen_down_old, self._was_down = self._was_down, False
+            return -1 if pen_down_old else 0
+        elif fn == 1:
+            return self._down_pos[0]
+        elif fn == 2:
+            return self._down_pos[1]
+        elif fn == 3:
+            return -1 if self._is_down else 0
+        elif fn == 4:
+            return self._pos[0]
+        elif fn == 5:
+            return self._pos[1]
+        elif fn == 6:
+            row, _ = mode.pixel_to_text_pos(*self._down_pos)
+            return row
+        elif fn == 7:
+            _, col = mode.pixel_to_text_pos(*self._down_pos)
+            return col
+        elif fn == 8:
+            row, _ = mode.pixel_to_text_pos(*self._pos)
+            return row
+        elif fn == 9:
+            _, col = mode.pixel_to_text_pos(*self._pos)
+            return col
 
 
 ###############################################################################

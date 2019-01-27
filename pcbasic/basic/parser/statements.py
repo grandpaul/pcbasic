@@ -332,7 +332,7 @@ class Parser(object):
             tk.PSET: session.drawing.pset_,
             tk.PRESET: session.drawing.preset_,
             tk.SCREEN: session.display.screen_,
-            tk.LOCATE: session.screen.locate_,
+            tk.LOCATE: session.text_screen.locate_,
             tk.FILES: session.files.files_,
             tk.FIELD: session.files.field_,
             tk.NAME: session.files.name_,
@@ -375,9 +375,9 @@ class Parser(object):
             tk.DEF: session.all_memory.def_seg_,
             tk.LINE + tk.INPUT: session.line_input_,
             tk.LINE: session.drawing.line_,
-            tk.KEY + tk.ON: session.fkey_macros.key_,
-            tk.KEY + tk.OFF: session.fkey_macros.key_,
-            tk.KEY + tk.LIST: session.fkey_macros.key_,
+            tk.KEY + tk.ON: session.console.key_,
+            tk.KEY + tk.OFF: session.console.key_,
+            tk.KEY + tk.LIST: session.console.key_,
             tk.KEY + b'(': session.basic_events.key_,
             tk.KEY: session.key_,
             tk.PUT + b'(': session.drawing.put_,
@@ -388,7 +388,7 @@ class Parser(object):
             tk.PLAY + tk.OFF: session.basic_events.play_,
             tk.PLAY + tk.STOP: session.basic_events.play_,
             tk.PLAY: session.sound.play_,
-            tk.VIEW + tk.PRINT: session.screen.view_print_,
+            tk.VIEW + tk.PRINT: session.text_screen.view_print_,
             tk.VIEW: session.drawing.view_,
             tk.PALETTE + tk.USING: session.display.palette_using_,
             tk.PALETTE: session.display.palette_,
@@ -1277,7 +1277,7 @@ class Parser(object):
         yield self._parse_variable(ins)
 
     ###########################################################################
-    # console and editor statements
+    # console / text screen statements
 
     def _parse_key_macro(self, ins):
         """Parse KEY ON/OFF/LIST syntax."""

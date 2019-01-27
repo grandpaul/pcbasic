@@ -26,7 +26,7 @@ from . import eventcycle
 from . import basicevents
 from . import program
 from . import display
-from . import editor
+from . import console
 from . import inputs
 from . import clock
 from . import dos
@@ -122,17 +122,13 @@ class Implementation(object):
         # initialise sound queue
         self.sound = sound.Sound(self.queues, self.values, self.memory, syntax)
         # Sound is needed for the beeps on \a
-        # InputMethods is needed for wait() in graphics
         self.display = display.Display(
             self.queues, self.values, self.queues,
             self.memory, text_width, video_memory, video, monitor,
-            self.sound, self.io_streams,
             self.codepage, font
         )
-        self.screen = self.display.text_screen
+        self.text_screen = self.display.text_screen
         self.drawing = self.display.drawing
-        # initilise floating-point error message stream
-        self.values.set_handler(values.FloatErrorHandler(self.screen))
         # prepare input devices (keyboard, pen, joystick, clipboard-copier)
         # EventHandler needed for wait() only
         self.keyboard = inputs.Keyboard(
@@ -140,6 +136,14 @@ class Implementation(object):
         )
         self.pen = inputs.Pen()
         self.stick = inputs.Stick(self.values)
+        # 12 definable function keys for Tandy, 10 otherwise
+        num_fn_keys = 12 if syntax == 'tandy' else 10
+        # initialise the console
+        self.console = console.Console(
+            self.text_screen, self.keyboard, self.sound, self.io_streams, num_fn_keys
+        )
+        # initilise floating-point error message stream
+        self.values.set_handler(values.FloatErrorHandler(self.console))
         ######################################################################
         # devices
         ######################################################################
@@ -147,15 +151,20 @@ class Implementation(object):
         # DataSegment needed for COMn and disk FIELD buffers
         # EventCycle needed for wait()
         self.files = Files(
-            self.values, self.memory, self.queues, self.keyboard, self.display,
+            self.values, self.memory, self.queues, self.keyboard, self.display, self.console,
             max_files, max_reclen, serial_buffer_size,
             devices, current_device, mount,
             self.codepage, textfile_encoding, soft_linefeed
         )
+        # enable print screen from console
+        self.console.set_lpt1_file(self.files.lpt1_file)
+        ######################################################################
+        # other components
+        ######################################################################
         # set up the SHELL command
         # Files needed for current disk device
         self.shell = dos.Shell(
-            self.queues, self.keyboard, self.screen, self.files, self.codepage, shell
+            self.queues, self.keyboard, self.console, self.files, self.codepage, shell
         )
         # set up environment
         self.environment = dos.Environment(self.values, self.codepage)
@@ -167,28 +176,15 @@ class Implementation(object):
         # register input event handlers
         ######################################################################
         # clipboard and print screen handler
-        clip_handler = inputs.ScreenCopyHandler(self.screen, self.files.lpt1_file)
-        self.queues.add_handler(clip_handler)
+        self.queues.add_handler(self.console.get_copy_handler())
         # keyboard, pen and stick
         self.queues.add_handler(self.keyboard)
         self.queues.add_handler(self.pen)
         self.queues.add_handler(self.stick)
-        # 12 definable function keys for Tandy, 10 otherwise
-        num_fn_keys = 12 if syntax == 'tandy' else 10
         # set up BASIC event handlers
         self.basic_events = basicevents.BasicEvents(
-            self.values, self.sound, self.clock, self.files,
-            self.screen, self.program, num_fn_keys
+            self.values, self.sound, self.clock, self.files, self.program, num_fn_keys
         )
-        ######################################################################
-        # editor
-        ######################################################################
-        # key macro guide
-        self.fkey_macros = editor.FunctionKeyMacros(self.keyboard, self.screen, num_fn_keys)
-        # initialise the editor
-        self.editor = editor.Editor(self.screen, self.keyboard, self.sound, self.io_streams)
-        # enable print screen from editor
-        self.editor.set_lpt1_file(self.files.lpt1_file)
         ######################################################################
         # extensions
         ######################################################################
@@ -200,7 +196,7 @@ class Implementation(object):
         self.parser = parser.Parser(self.values, self.memory, syntax)
         # initialise the interpreter
         self.interpreter = interpreter.Interpreter(
-            self.queues, self.screen, self.files, self.sound,
+            self.queues, self.console, self.files, self.sound,
             self.values, self.memory, self.program, self.parser, self.basic_events
         )
         ######################################################################
@@ -325,7 +321,7 @@ class Implementation(object):
                 else:
                     self._show_prompt()
                     # input loop, checks events
-                    line = self.editor.wait_screenline(from_start=True)
+                    line = self.console.wait_screenline(from_start=True)
                     self._prompt = not self._store_line(line)
 
     def close(self):
@@ -340,10 +336,10 @@ class Implementation(object):
             linenum, tell = self._edit_prompt
             # unset edit prompt first, in case program.edit throws
             self._edit_prompt = False
-            self.program.edit(self.screen, linenum, tell)
+            self.program.edit(self.console, linenum, tell)
         elif self._prompt:
-            self.screen.start_line()
-            self.screen.write_line(b'Ok\xff')
+            self.console.start_line()
+            self.console.write_line(b'Ok\xff')
 
     def _store_line(self, line):
         """Store a program line or schedule a command line for execution."""
@@ -370,15 +366,15 @@ class Implementation(object):
         """Generate an AUTO line number and wait for input."""
         try:
             numstr = b'%d' % (self._auto_linenum,)
-            self.screen.write(numstr)
+            self.console.write(numstr)
             if self._auto_linenum in self.program.line_numbers:
-                self.screen.write(b'*')
-                line = bytearray(self.editor.wait_screenline(from_start=True))
+                self.console.write(b'*')
+                line = bytearray(self.console.wait_screenline(from_start=True))
                 if line[:len(numstr)+1] == numstr + b'*':
                     line[len(numstr)] = b' '
             else:
-                self.screen.write(b' ')
-                line = bytearray(self.editor.wait_screenline(from_start=True))
+                self.console.write(b' ')
+                line = bytearray(self.console.wait_screenline(from_start=True))
             # run or store it; don't clear lines or raise undefined line number
             self.interpreter.direct_line = self.tokeniser.tokenise_line(line)
             c = self.interpreter.direct_line.peek()
@@ -420,8 +416,8 @@ class Implementation(object):
     def _handle_error(self, e):
         """Handle a BASIC error through error message."""
         # not handled by ON ERROR, stop execution
-        self.screen.start_line()
-        self.screen.write(e.get_message(self.program.get_line_number(e.pos)))
+        self.console.start_line()
+        self.console.write(e.get_message(self.program.get_line_number(e.pos)))
         self.interpreter.set_parse_mode(False)
         self.interpreter.input_mode = False
         # special case: syntax error
@@ -500,13 +496,13 @@ class Implementation(object):
         cmd = values.next_string(args)
         list(args)
         # force cursor visible in all cases
-        self.screen.cursor.show(True)
+        self.text_screen.cursor.show(True)
         # sound stops playing and is forgotten
         self.sound.stop_all_sound()
         # run the os-specific shell
         self.shell.launch(cmd)
         # reset cursor visibility to its previous state
-        self.screen.cursor.reset_visibility()
+        self.text_screen.cursor.reset_visibility()
 
     def term_(self, args):
         """TERM: terminal emulator."""
@@ -553,7 +549,7 @@ class Implementation(object):
                 # and interruptible
                 self.queues.wait()
                 # LIST on screen is slightly different from just writing
-                self.screen.list_line(l)
+                self.console.list_line(l)
         # return to direct mode
         self.interpreter.set_pointer(False)
 
@@ -567,7 +563,7 @@ class Implementation(object):
         # throws back to direct mode
         # jump to end of direct line so execution stops
         self.interpreter.set_pointer(False)
-        self.screen.cursor.reset_visibility()
+        self.text_screen.cursor.reset_visibility()
         # request edit prompt
         self._edit_prompt = (from_line, None)
 
@@ -737,11 +733,11 @@ class Implementation(object):
             # readvar is a list of (name, indices) tuples
             # we return a list of (name, indices, values) tuples
             while True:
-                self.screen.write(prompt)
+                self.console.write(prompt)
                 # disconnect the wrap between line with the prompt and previous line
-                if self.screen.current_row > 1:
-                    self.screen.set_wrap(self.screen.current_row-1, False)
-                line = self.editor.wait_screenline(write_endl=newline)
+                if self.text_screen.current_row > 1:
+                    self.text_screen.set_wrap(self.text_screen.current_row-1, False)
+                line = self.console.wait_screenline(write_endl=newline)
                 inputstream = InputTextFile(line)
                 # read the values and group them and the separators
                 var, values, seps = [], [], []
@@ -763,7 +759,7 @@ class Implementation(object):
                 # None means a conversion error occurred
                 if (seps[-1] or b'' in seps[:-1] or None in values):
                     # good old Redo!
-                    self.screen.write_line(b'?Redo from start')
+                    self.console.write_line(b'?Redo from start')
                     readvar = var
                 else:
                     varlist = [r + [v] for r, v in zip(var, values)]
@@ -811,8 +807,8 @@ class Implementation(object):
         else:
             self.interpreter.input_mode = True
             self.parser.redo_on_break = True
-            self.screen.write(prompt)
-            line = self.editor.wait_screenline(write_endl=newline)
+            self.console.write(prompt)
+            line = self.console.wait_screenline(write_endl=newline)
             self.parser.redo_on_break = False
             self.interpreter.input_mode = False
         self.memory.set_variable(readvar, indices, self.values.from_value(line, values.STR))
@@ -825,9 +821,9 @@ class Implementation(object):
             val = values.pass_number(val, err=error.IFC)
         else:
             # prompt for random seed if not specified
-            while True:
-                self.screen.write(b'Random number seed (-32768 to 32767)? ')
-                seed = self.editor.wait_screenline()
+            while val is None:
+                self.console.write(b'Random number seed (-32768 to 32767)? ')
+                seed = self.console.wait_screenline()
                 try:
                     val = self.values.from_repr(seed, allow_nonnum=False)
                 except error.BASICError as e:
@@ -840,23 +836,19 @@ class Implementation(object):
         self.randomiser.reseed(val)
 
     def key_(self, args):
-        """KEY: macro or event handler definition."""
+        """KEY: macro or event trigger definition."""
         keynum = values.to_int(next(args))
         error.range_check(1, 255, keynum)
         text = values.next_string(args)
         list(args)
-        if keynum <= self.fkey_macros.num_fn_keys:
-            self.fkey_macros.set(keynum, text)
-            self.screen.redraw_bar()
-        else:
-            # only length-2 expressions can be assigned to KEYs over 10
-            # in which case it's a key scancode definition
-            if len(text) != 2:
-                raise error.BASICError(error.IFC)
+        try:
+            self.console.set_macro(keynum, text)
+        except ValueError:
+            # if out of range of number of macros (12 on Tandy, else 10), it's a trigger definition
             self.basic_events.key[keynum-1].set_trigger(text)
 
     def pen_fn_(self, args):
         """PEN: poll the light pen."""
         fn, = args
-        result = self.pen.poll(fn, self.basic_events.pen.enabled, self.screen)
+        result = self.pen.poll(fn, self.basic_events.pen.enabled, self.display.mode)
         return self.values.new_integer().from_int(result)
