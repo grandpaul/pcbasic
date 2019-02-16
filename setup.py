@@ -8,10 +8,19 @@ This file is released under the GNU GPL version 3 or later.
 
 import sys
 import os
+import json
 from io import open
 
 from setuptools import find_packages, setup
 
+# check we're not using the wrong script
+if set(sys.argv) & set((
+        'bdist_wheel', 'sdist', 'bdist_rpm', 'bdist_deb', 'bdist_msi', 'bdist_dmg', 'build_docs'
+    )):
+    sys.exit(
+        'setup.py is the sdist install script only, '
+        'please use distribute.py to build, package or deploy.'
+    )
 
 ###############################################################################
 # get descriptions and version number
@@ -19,83 +28,36 @@ from setuptools import find_packages, setup
 # file location
 HERE = os.path.abspath(os.path.dirname(__file__))
 
-# obtain metadata without importing the package (to avoid breaking setup)
-with open(os.path.join(HERE, 'pcbasic', 'metadata.py'), encoding='utf-8') as f:
-    exec(f.read())
+# obtain metadata without importing the package (to avoid breaking sdist install)
+with open(os.path.join(HERE, 'pcbasic', 'basic', 'data', 'meta.json'), 'r') as meta:
+    _METADATA = json.load(meta)
+    VERSION = _METADATA['version']
+    AUTHOR = _METADATA['author']
 
 
 ###############################################################################
 # setup parameters
 
-SETUP_OPTIONS = {
-
-    # metadata
-    'name': PACKAGE,
-    'version': VERSION,
-    'description': DESCRIPTION,
-    'long_description': LONG_DESCRIPTION,
-    'url': URL,
-    'author': AUTHOR,
-    'author_email': EMAIL,
-    'license': LICENCE,
-    'classifiers': CLASSIFIERS,
-    'keywords': KEYWORDS,
+SETUP_OPTIONS = dict(
+    name='pcbasic',
+    version=VERSION,
+    author=AUTHOR,
 
     # contents
-    'packages': find_packages(exclude=['doc', 'test', 'docsrc', 'icons']),
-    # rule of thumb for sdist: package_data specifies what gets *installed*,
-    # but manifest specifies what gets *included* in the archive in the first place
-    'package_data': {
-        PACKAGE: [
-            '*.txt', '*.md', 'pcbasic/*.txt',
-            'pcbasic/data/*', 'pcbasic/data/*/*',
-            # libs should be installed if included (in wheels)
-            'pcbasic/lib/*',
-        ],
-    },
-    'ext_modules': [],
-    'include_package_data': True,
-
-    # requirements
-    # need Python 2.7.12+ or Python 3.5+
-    'python_requires': '>=2.7.12,!=3.0.*,!=3.1.*,!=3.2.*,!=3.3.*,!=3.4.*',
-    'install_requires': ['pyserial',],
-    # use e.g. pip install -e .[dev,full]
-    # pyparallel should be installed manually or through the distro if needed
-    'extras_require': {
-        'dev': ['lxml', 'markdown', 'pylint', 'coverage', 'cx_Freeze', 'Pillow', 'twine', 'wheel'],
-        'full': ['pygame', 'pyaudio'],
-    },
-
+    # only include subpackages of pcbasic: exclude test, docsrc, packaging etc
+    # even if these are excluded in the manifest, bdist_wheel will pick them up (but sdist won't)
+    packages=find_packages(exclude=[_name for _name in os.listdir(HERE) if _name != 'pcbasic']),
+    ext_modules=[],
+    # include package data from MANIFEST.in (which is created by packaging script)
+    include_package_data=True,
     # launchers
-    'entry_points': {
-        'console_scripts':  ['pcbasic=pcbasic:main'],
-        'gui_scripts': [],
-    },
-
-}
-
-if os.path.isdir('resources') and sys.platform.startswith('linux'):
-    # these are for linux packaging only, but these files are simply not present otherwise
-    SETUP_OPTIONS['data_files'] = [
-        ('/usr/local/share/man/man1/', ['resources/pcbasic.1.gz']),
-        ('/usr/local/share/applications/', ['resources/pcbasic.desktop']),
-        ('/usr/local/share/icons', ['resources/pcbasic.png']),
-    ]
-
+    entry_points=dict(
+        console_scripts=['pcbasic=pcbasic:main'],
+    ),
+)
 
 ###############################################################################
 # run the setup
 
-if __name__ == '__main__':
-
-    # check we're not using the wrong script
-    if set(sys.argv) & set((
-            'bdist_wheel', 'sdist', 'bdist_rpm', 'bdist_deb', 'bdist_msi', 'bdist_dmg', 'build_docs'
-        )):
-        print(
-            'setup.py is the install script only, please use package.py to build, package or deploy.'
-        )
-    else:
-        # perform the installation
-        setup(**SETUP_OPTIONS)
+# perform the installation
+setup(**SETUP_OPTIONS)
