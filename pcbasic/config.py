@@ -625,22 +625,25 @@ class Settings(object):
                     logging.warning(u'Could not open output file `%s`: %s', outfile, e.strerror)
         # implicit stdio redirects
         # add stdio if redirected or no interface
-        if stdio.stdin not in input_streams and stdio.stdin.buffer not in input_streams:
-            if IS_CONSOLE_APP and not stdio.stdin.isatty():
-                # redirected on console; use bytes stream
-                input_streams.append(stdio.stdin.buffer)
-            elif IS_CONSOLE_APP and not self.interface:
-                # no interface & on console; use unicode stream
-                input_streams.append(stdio.stdin)
-        # redirect output as well if input is redirected, but not the other way around
-        # this is because (1) GW-BASIC does this from the DOS prompt
-        # (2) otherwise we don't see anything - we quit after input closes
-        # isatty is also false if we run as a GUI exe, so check that here
-        if stdio.stdout not in output_streams and stdio.stdout.buffer not in output_streams:
-            if IS_CONSOLE_APP and (not stdio.stdout.isatty() or not stdio.stdin.isatty()):
-                output_streams.append(stdio.stdout.buffer)
-            elif IS_CONSOLE_APP and not self.interface:
-                output_streams.append(stdio.stdout)
+        try:
+            if stdio.stdin not in input_streams and stdio.stdin.buffer not in input_streams:
+                if IS_CONSOLE_APP and not stdio.stdin.isatty():
+                    # redirected on console; use bytes stream
+                    input_streams.append(stdio.stdin.buffer)
+                elif IS_CONSOLE_APP and not self.interface:
+                    # no interface & on console; use unicode stream
+                    input_streams.append(stdio.stdin)
+            # redirect output as well if input is redirected, but not the other way around
+            # this is because (1) GW-BASIC does this from the DOS prompt
+            # (2) otherwise we don't see anything - we quit after input closes
+            # isatty is also false if we run as a GUI exe, so check that here
+            if stdio.stdout not in output_streams and stdio.stdout.buffer not in output_streams:
+                if IS_CONSOLE_APP and (not stdio.stdout.isatty() or not stdio.stdin.isatty()):
+                    output_streams.append(stdio.stdout.buffer)
+                elif IS_CONSOLE_APP and not self.interface:
+                    output_streams.append(stdio.stdout)
+        except Exception as e:
+            logging.error(e)
         return {
             'output_streams': output_streams,
             'input_streams': input_streams,

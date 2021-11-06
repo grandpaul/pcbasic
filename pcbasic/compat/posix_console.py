@@ -215,17 +215,26 @@ DEFAULT_PALETTE = (
 ###################################################################################################
 
 
-class StdIO(StdIOBase):
+class StdIO(object): #StdIOBase):
     """Holds standard unicode streams."""
 
+    stdin = None
+    stdout = None
+    stderr = None
+"""
     if PY2:
         def _attach_stdin(self):
-            self.stdin = self._wrap_input_stream(sys.stdin)
+            try:
+                self.stdin = self._wrap_input_stream(sys.stdin)
+            except Exception as e:
+                logging.error(e)
+
 
         def _attach_output_stream(self, stream_name, redirected=False):
             stream = getattr(sys, '__%s__' % (stream_name,))
             new_stream = self._wrap_output_stream(stream)
             setattr(self, stream_name, new_stream)
+"""
 
 stdio = StdIO()
 
@@ -240,8 +249,14 @@ class PosixConsole(object):
     def __init__(self):
         """Set up the console."""
         # buffer to save termios state
-        if not sys.stdin.isatty() or not sys.stdout.isatty():
-            raise EnvironmentError('Not a terminal')
+        try:
+            if not sys.stdin.isatty() or not sys.stdout.isatty():
+                raise EnvironmentError('Not a terminal')
+        except ValueError:
+            raise EnvironmentError('Stdio closed')
+        except Exception as e:
+            logging.error(e)
+            raise EnvironmentError(e)
         self._term_attr = termios.tcgetattr(sys.stdin.fileno())
         # preserve original terminal size
         self._orig_size = self.get_size()
@@ -442,7 +457,15 @@ class PosixConsole(object):
 
 def _is_console_app():
     """To see if we are a console app, check if we can treat stdin like a tty, file or socket."""
-    if not sys.stdin.isatty():
+    try:
+        isatty = sys.stdin.isatty()
+    except ValueError:
+        # e.g. if sys.stdin is closed
+        return False
+    except Exception as e:
+        logging.eror(e)
+        return False
+    if not isatty:
         try:
             fcntl.ioctl(sys.stdin, termios.FIONREAD, _sock_size)
         except EnvironmentError:
@@ -450,12 +473,12 @@ def _is_console_app():
             return False
     return True
 
-IS_CONSOLE_APP = _is_console_app()
+IS_CONSOLE_APP = False #_is_console_app()
 
-try:
-    console = PosixConsole()
-except EnvironmentError:
-    console = None
+#try:
+#    console = PosixConsole()
+#except EnvironmentError:
+console = None
 
 # don't crash into raw terminal
 atexit.register(lambda: console.unset_raw() if console else None)
